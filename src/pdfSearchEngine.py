@@ -53,7 +53,10 @@ class PdfSearchEngine:
             self.pages_text = data['pages_text']
             self.graph = data['graph']
         self.is_indexed = True
-            
+
+    def calculate_page_rank(self):
+        self.graph.calculate_page_rank()
+
     def search(self, query):
         if not self.is_indexed:
             raise ValueError("Index not built or loaded")
@@ -61,16 +64,18 @@ class PdfSearchEngine:
         results = {}
 
         for word in query_words:
-            pages = self.trie.search(word)
-            for page in pages:
-                if page not in results:
-                    results[page] = 0
-                results[page] += 1
+            for page_num, page_text in enumerate(self.pages_text):
+                count = page_text.lower().count(word)
+                if count > 0:
+                    if page_num not in results:
+                        results[page_num] = {'count': 0, 'rank': self.graph.get_node(page_num).rank}
+                    results[page_num]['count'] += count
 
-        sorted_results = sorted(results.items(), key=lambda item: item[1], reverse=True)
+        # Sort results by word count and page rank
+        sorted_results = sorted(results.items(), key=lambda item: (item[1]['count'], item[1]['rank']), reverse=True)
         search_results = []
 
-        for i, (page_num, count) in enumerate(sorted_results):
+        for i, (page_num, info) in enumerate(sorted_results):
             context = self.get_context(self.pages_text[page_num], query_words)
             search_results.append((i + 1, page_num + 1, context))
 
@@ -90,4 +95,3 @@ class PdfSearchEngine:
             contexts.append(snippet)
 
         return ' ... '.join(contexts)
-

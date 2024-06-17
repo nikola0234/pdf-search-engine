@@ -1,6 +1,5 @@
 from pdfSearchEngine import PdfSearchEngine 
 import os
-
 def main():
     index_file = '../trie.pkl'
     pdf_path = '../Data Structures and Algorithms in Python.pdf'
@@ -15,6 +14,8 @@ def main():
         engine.save_index()
         print("Index built and saved to file.")
 
+    engine.calculate_page_rank()
+
     while True:
         print("1. Search")
         print("2. Exit")
@@ -24,6 +25,7 @@ def main():
             query = input("Enter search query: ")
             results = engine.search(query)
             for result_num, page_num, context in results:
+                print("-" * 80)
                 print(f"Result {result_num}: Page {page_num}")
                 print(f"Context: {context}")
                 print("-" * 80)
