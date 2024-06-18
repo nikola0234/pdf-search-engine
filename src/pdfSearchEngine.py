@@ -69,9 +69,16 @@ class PdfSearchEngine:
 
     def search_not(self, term1, term2):
         pages1 = set(self.trie.search(term1))
-        pages2 = set(self.trie.search(term2))
-        return pages1 - pages2
+        pages_to_exclude = set()
+        term2_regex = re.compile(r'\b' + re.escape(term2) + r'\b', re.IGNORECASE)
 
+        for page_num in pages1:
+            if term2_regex.search(self.pages_text[page_num]):
+                pages_to_exclude.add(page_num)
+
+        return pages1 - pages_to_exclude
+    
+    
     def evaluate_expression(self, query):
         def parse_expression(query):
             tokens = re.findall(r'\(|\)|\w+|AND|OR|NOT', query)
@@ -102,7 +109,7 @@ class PdfSearchEngine:
                     operators.pop()
                 elif token in {'AND', 'OR', 'NOT'}:
                     while (operators and operators[-1] in {'AND', 'OR', 'NOT'} and
-                           (token != 'NOT' or operators[-1] == 'NOT')):
+                        (token != 'NOT' or operators[-1] == 'NOT')):
                         apply_operator()
                     operators.append(token)
                 else:
