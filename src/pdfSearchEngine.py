@@ -57,9 +57,89 @@ class PdfSearchEngine:
     def calculate_page_rank(self):
         self.graph.calculate_page_rank()
 
+    def search_and(self, term1, term2):
+        pages1 = set(self.trie.search(term1))
+        pages2 = set(self.trie.search(term2))
+        return pages1 & pages2
+
+    def search_or(self, term1, term2):
+        pages1 = set(self.trie.search(term1))
+        pages2 = set(self.trie.search(term2))
+        return pages1 | pages2
+
+    def search_not(self, term1, term2):
+        pages1 = set(self.trie.search(term1))
+        pages2 = set(self.trie.search(term2))
+        return pages1 - pages2
+
+    def evaluate_expression(self, query):
+        def parse_expression(query):
+            tokens = re.findall(r'\(|\)|\w+|AND|OR|NOT', query)
+            return tokens
+
+        def eval_expression(tokens):
+            stack = []
+            operators = []
+
+            def apply_operator():
+                operator = operators.pop()
+                right = stack.pop()
+                left = stack.pop() if stack else None
+
+                if operator == 'AND':
+                    stack.append(self.search_and(left, right))
+                elif operator == 'OR':
+                    stack.append(self.search_or(left, right))
+                elif operator == 'NOT':
+                    stack.append(self.search_not(left, right))
+
+            for token in tokens:
+                if token == '(':
+                    operators.append(token)
+                elif token == ')':
+                    while operators and operators[-1] != '(':
+                        apply_operator()
+                    operators.pop()
+                elif token in {'AND', 'OR', 'NOT'}:
+                    while (operators and operators[-1] in {'AND', 'OR', 'NOT'} and
+                           (token != 'NOT' or operators[-1] == 'NOT')):
+                        apply_operator()
+                    operators.append(token)
+                else:
+                    stack.append(token.lower())
+
+            while operators:
+                apply_operator()
+
+            return stack[0] if stack else set()
+
+        tokens = parse_expression(query)
+        result_pages = eval_expression(tokens)
+        return result_pages
+
+    def search_log(self, query):
+        result_pages = self.evaluate_expression(query)
+        query_terms = [term for term in re.findall(r'\w+', query.lower()) if term not in {'and', 'or', 'not'}]
+
+        results = {}
+        for page_num in result_pages:
+            results[page_num] = {'count': sum(self.pages_text[page_num].lower().count(term) for term in query_terms), 'rank': self.graph.get_node(page_num).rank}
+
+        sorted_results = sorted(results.items(), key=lambda item: (item[1]['count'], item[1]['rank']), reverse=True)
+        search_results = []
+
+        for i, (page_num, info) in enumerate(sorted_results):
+            context = self.get_context(self.pages_text[page_num], query_terms)
+            search_results.append((i + 1, page_num + 1, context))
+
+        return search_results
     def search(self, query):
         if not self.is_indexed:
             raise ValueError("Index not built or loaded")
+        
+        if any(op in query.upper() for op in ['AND', 'OR', 'NOT']):
+            return self.search_log(query)
+            
         query_words = query.lower().split()
         results = {}
 
@@ -71,7 +151,6 @@ class PdfSearchEngine:
                         results[page_num] = {'count': 0, 'rank': self.graph.get_node(page_num).rank}
                     results[page_num]['count'] += count
 
-        # Sort results by word count and page rank
         sorted_results = sorted(results.items(), key=lambda item: (item[1]['count'], item[1]['rank']), reverse=True)
         search_results = []
 
