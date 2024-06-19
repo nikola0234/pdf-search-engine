@@ -14,6 +14,10 @@ class PdfSearchEngine:
         self.graph = Graph()
         self.pages_text = []
         self.is_indexed = False
+    
+    def get_trie(self):
+        return self.trie
+
 
     def index_pdf(self):
         with open(self.path, 'rb') as f:
@@ -25,10 +29,12 @@ class PdfSearchEngine:
                 self.find_references(text, page_num)
         self.is_indexed = True
 
+
     def index_page(self, text, page_num):
         words = re.findall(r'\b\w+\b', text)
         for word in words:
             self.trie.insert(word.lower(), page_num)
+
 
     def find_references(self, text, page_num):
         references = re.findall(r'page\s+(\d+)', text, re.IGNORECASE)
@@ -58,17 +64,17 @@ class PdfSearchEngine:
         self.graph.calculate_page_rank()
 
     def search_and(self, term1, term2):
-        pages1 = set(self.trie.search(term1))
-        pages2 = set(self.trie.search(term2))
+        pages1 = set(self.trie.search_log(term1))
+        pages2 = set(self.trie.search_log(term2))
         return pages1 & pages2
 
     def search_or(self, term1, term2):
-        pages1 = set(self.trie.search(term1))
-        pages2 = set(self.trie.search(term2))
+        pages1 = set(self.trie.search_log(term1))
+        pages2 = set(self.trie.search_log(term2))
         return pages1 | pages2
 
     def search_not(self, term1, term2):
-        pages1 = set(self.trie.search(term1))
+        pages1 = set(self.trie.search_log(term1))
         pages_to_exclude = set()
         term2_regex = re.compile(r'\b' + re.escape(term2) + r'\b', re.IGNORECASE)
 
@@ -124,6 +130,7 @@ class PdfSearchEngine:
         result_pages = eval_expression(tokens)
         return result_pages
 
+
     def search_log(self, query):
         result_pages = self.evaluate_expression(query)
         query_terms = [term for term in re.findall(r'\w+', query.lower()) if term not in {'and', 'or', 'not'}]
@@ -140,23 +147,24 @@ class PdfSearchEngine:
             search_results.append((i + 1, page_num + 1, context))
 
         return search_results
+    
+    
     def search(self, query):
         if not self.is_indexed:
             raise ValueError("Index not built or loaded")
         
-        if any(op in query.upper() for op in ['AND', 'OR', 'NOT']):
+        if any(op in query for op in ['AND', 'OR', 'NOT']):
             return self.search_log(query)
             
         query_words = query.lower().split()
         results = {}
 
         for word in query_words:
-            for page_num, page_text in enumerate(self.pages_text):
-                count = page_text.lower().count(word)
-                if count > 0:
-                    if page_num not in results:
-                        results[page_num] = {'count': 0, 'rank': self.graph.get_node(page_num).rank}
-                    results[page_num]['count'] += count
+            pages = self.trie.search(word)
+            for page_num in pages:
+                if page_num not in results:
+                    results[page_num] = {'count': 0, 'rank': self.graph.get_node(page_num).rank}
+                results[page_num]['count'] += self.pages_text[page_num].lower().count(word)
 
         sorted_results = sorted(results.items(), key=lambda item: (item[1]['count'], item[1]['rank']), reverse=True)
         search_results = []
@@ -174,10 +182,17 @@ class PdfSearchEngine:
 
         for pos in positions:
             start = max(pos - context_size, 0)
-            end = min(pos + context_size, len(text))
+            end = min(pos + context_size + len(query_words[0]), len(text))
             snippet = text[start:end]
             for word in query_words:
                 snippet = re.sub(re.escape(word), colored(word, 'red'), snippet, flags=re.IGNORECASE)
             contexts.append(snippet)
 
         return ' ... '.join(contexts)
+    
+    
+    def read_page(self, page_num):
+        if 0 <= page_num < len(self.pages_text):
+            return self.pages_text[page_num]
+        else:
+            return "Invalid page number."

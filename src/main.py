@@ -1,5 +1,7 @@
 from pdfSearchEngine import PdfSearchEngine 
 import os
+import trie
+
 def main():
     index_file = '../trie.pkl'
     pdf_path = '../Data Structures and Algorithms in Python.pdf'
@@ -16,9 +18,12 @@ def main():
 
     engine.calculate_page_rank()
 
+    trie = engine.get_trie()
+
     while True:
         print("1. Search")
         print("2. Exit")
+        print("3. Write page")
         
         choice = input("Enter your choice: ")
         if choice == '1':
@@ -31,6 +36,9 @@ def main():
                 print("-" * 80)
         elif choice == '2':
             break
+
+        elif choice == '3':
+            trie.print_trie()
 
 if __name__ == "__main__":
     main()
