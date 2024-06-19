@@ -130,6 +130,112 @@ class PdfSearchEngine:
         result_pages = eval_expression(tokens)
         return result_pages
 
+    def evaluate_expression1(self, query):
+        def parse_expression(query):
+            
+            tokens = re.findall(r'\(|\)|\w+|AND|OR|NOT', query)
+            return tokens
+
+        def eval_expression(tokens):
+            def apply_operator(operators, values):
+                operator = operators.pop()
+                if operator == 'NOT':
+                    value = values.pop()
+                    values.append(self.search_not1(value))
+                else:
+                    right = values.pop()
+                    left = values.pop()
+                    if operator == 'AND':
+                        values.append(self.search_and1(left, right))
+                    elif operator == 'OR':
+                        values.append(self.search_or1(left, right))
+
+            values = []
+            operators = []
+            precedence = {'OR': 1, 'AND': 2, 'NOT': 3}
+            i = 0
+            while i < len(tokens):
+                token = tokens[i]
+                if token == '(':
+                    operators.append(token)
+                elif token == ')':
+                    while operators and operators[-1] != '(':
+                        apply_operator(operators, values)
+                    operators.pop()  
+                elif token in precedence:
+                    while (operators and operators[-1] in precedence and
+                        precedence[token] <= precedence[operators[-1]]):
+                        apply_operator(operators, values)
+                    operators.append(token)
+                else:
+                    values.append(token)
+                i += 1
+
+            while operators:
+                apply_operator(operators, values)
+
+            return values[0]
+
+        tokens = parse_expression(query)
+        result_pages = eval_expression(tokens)
+        return result_pages
+
+    def search_log1(self, query):
+        result_pages = self.evaluate_expression(query)
+        query_terms = [term for term in re.findall(r'\w+', query.lower()) if term not in {'and', 'or', 'not'}]
+
+        results = {}
+        for page_num in result_pages:
+            results[page_num] = {
+                'count': sum(self.pages_text[page_num].lower().count(term) for term in query_terms),
+                'rank': self.graph.get_node(page_num).rank
+            }
+
+        sorted_results = sorted(results.items(), key=lambda item: (item[1]['count'], item[1]['rank']), reverse=True)
+        search_results = []
+
+        for i, (page_num, info) in enumerate(sorted_results):
+            context = self.get_context(self.pages_text[page_num], query_terms)
+            search_results.append((i + 1, page_num + 1, context))
+
+        return search_results
+
+    def search_and1(self, term1, term2):
+        if isinstance(term1, set):
+            pages1 = term1
+        else:
+            pages1 = set(self.trie.search(term1))
+        if isinstance(term2, set):
+            pages2 = term2
+        else:
+            pages2 = set(self.trie.search(term2))
+        return pages1 & pages2
+
+    def search_or1(self, term1, term2):
+        if isinstance(term1, set):
+            pages1 = term1
+        else:
+            pages1 = set(self.trie.search(term1))
+        if isinstance(term2, set):
+            pages2 = term2
+        else:
+            pages2 = set(self.trie.search(term2))
+        return pages1 | pages2
+
+    def search_not1(self, term1, term2=None):
+        if isinstance(term1, set):
+            pages1 = term1
+        else:
+            pages1 = set(self.trie.search(term1))
+        if term2 is None:
+            return set(range(len(self.pages_text))) - pages1
+        else:
+            if isinstance(term2, set):
+                pages2 = term2
+            else:
+                pages2 = set(self.trie.search(term2))
+            return pages1 - pages2
+
 
     def search_log(self, query):
         result_pages = self.evaluate_expression(query)
@@ -154,7 +260,7 @@ class PdfSearchEngine:
             raise ValueError("Index not built or loaded")
         
         if any(op in query for op in ['AND', 'OR', 'NOT']):
-            return self.search_log(query)
+            return self.search_log1(query)
             
         query_words = query.lower().split()
         results = {}
