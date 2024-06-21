@@ -20,8 +20,6 @@ def main():
 
     trie = engine.get_trie()
 
-    engine.save_popular_terms()
-
     while True:
         print("1. Search")
         print("2. Exit")
@@ -36,8 +34,9 @@ def main():
 
                 results = engine.search(query, page, results_per_page)
 
-                if not results:
-                    print("No results found.")
+                if not results or len(results) < 3:  
+                    alternative = engine.suggest_correction(query)
+                    print(f"Did you mean: {alternative}?")
                     break
 
                 print('\n' + '-' * 80)    

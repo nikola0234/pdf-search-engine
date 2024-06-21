@@ -16,6 +16,7 @@ class PdfSearchEngine:
         self.graph = Graph()
         self.pages_text = []
         self.is_indexed = False
+        self.popular_terms = self.load_popular_terms()
     
     def get_trie(self):
         return self.trie
@@ -31,6 +32,13 @@ class PdfSearchEngine:
                 self.find_references(text, page_num)
         self.is_indexed = True
 
+
+    def load_popular_terms(self, filename='popular_terms.txt'):
+        try:
+            with open(filename, 'r', encoding='utf-8') as f:
+                return [line.strip() for line in f]
+        except FileNotFoundError:
+            return []
 
     def save_popular_terms(self, filename='popular_terms.txt', top_n=500):
         word_counter = Counter()
@@ -49,6 +57,15 @@ class PdfSearchEngine:
     def suggest_correction(self, query):
         query_terms = re.findall(r'\b\w+\b', query.lower())
         suggestions = []
+
+        for term in query_terms:
+            suggestion = process.extractOne(term, self.popular_terms)
+            if suggestion[1] > 70:
+                suggestions.append(suggestion[0])
+        
+        return " ".join(suggestions)
+        
+
 
 
     def index_page(self, text, page_num):
