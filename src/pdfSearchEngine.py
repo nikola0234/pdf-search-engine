@@ -139,16 +139,14 @@ class PdfSearchEngine:
         def eval_expression(tokens):
             def apply_operator(operators, values):
                 operator = operators.pop()
+                right = values.pop()
+                left = values.pop()
                 if operator == 'NOT':
-                    value = values.pop()
-                    values.append(self.search_not1(value))
-                else:
-                    right = values.pop()
-                    left = values.pop()
-                    if operator == 'AND':
-                        values.append(self.search_and1(left, right))
-                    elif operator == 'OR':
-                        values.append(self.search_or1(left, right))
+                    values.append(self.search_not1(left, right))
+                elif operator == 'AND':
+                    values.append(self.search_and1(left, right))
+                elif operator == 'OR':
+                    values.append(self.search_or1(left, right))
 
             values = []
             operators = []
@@ -178,10 +176,11 @@ class PdfSearchEngine:
 
         tokens = parse_expression(query)
         result_pages = eval_expression(tokens)
+        print(result_pages)
         return result_pages
 
     def search_log1(self, query):
-        result_pages = self.evaluate_expression(query)
+        result_pages = self.evaluate_expression1(query)
         query_terms = [term for term in re.findall(r'\w+', query.lower()) if term not in {'and', 'or', 'not'}]
 
         results = {}
@@ -201,6 +200,7 @@ class PdfSearchEngine:
         return search_results
 
     def search_and1(self, term1, term2):
+        print(term1, term2)
         if isinstance(term1, set):
             pages1 = term1
         else:
@@ -212,6 +212,7 @@ class PdfSearchEngine:
         return pages1 & pages2
 
     def search_or1(self, term1, term2):
+        print(term1, term2)
         if isinstance(term1, set):
             pages1 = term1
         else:
@@ -222,7 +223,8 @@ class PdfSearchEngine:
             pages2 = set(self.trie.search(term2))
         return pages1 | pages2
 
-    def search_not1(self, term1, term2=None):
+    def search_not1(self, term1, term2):
+        print(term1, term2)
         if isinstance(term1, set):
             pages1 = term1
         else:
