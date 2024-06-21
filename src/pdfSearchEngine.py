@@ -5,6 +5,8 @@ from trie import Trie
 from termcolor import colored
 import pickle
 from gaph import Graph
+from fuzzywuzzy import process
+from collections import Counter
 
 class PdfSearchEngine:
     def __init__(self, path, index_file):
@@ -28,6 +30,25 @@ class PdfSearchEngine:
                 self.graph.add_node(page_num)
                 self.find_references(text, page_num)
         self.is_indexed = True
+
+
+    def save_popular_terms(self, filename='popular_terms.txt', top_n=500):
+        word_counter = Counter()
+        
+        for page_text in self.pages_text:
+            words = re.findall(r'\b\w+\b', page_text.lower())
+            word_counter.update(words)
+        
+        most_common_words = word_counter.most_common(top_n)
+        
+        with open(filename, 'w', encoding='utf-8') as f:
+            for word, count in most_common_words:
+                if len(word) > 3:    
+                    f.write(f'{word}\n')
+
+    def suggest_correction(self, query):
+        query_terms = re.findall(r'\b\w+\b', query.lower())
+        suggestions = []
 
 
     def index_page(self, text, page_num):
@@ -66,15 +87,14 @@ class PdfSearchEngine:
 
     def evaluate_expression(self, query):
         def parse_expression(query):
-            
-            tokens = re.findall(r'\(|\)|\w+|AND|OR|NOT', query)
+            tokens = re.findall(r'\".*?\"|\(|\)|\w+|AND|OR|NOT', query)
             return tokens
 
         def eval_expression(tokens):
             def apply_operator(operators, values):
                 operator = operators.pop()
                 right = values.pop()
-                left = values.pop()
+                left = values.pop() if values else None
                 if operator == 'NOT':
                     values.append(self.search_not(left, right))
                 elif operator == 'AND':
@@ -96,11 +116,15 @@ class PdfSearchEngine:
                     operators.pop()  
                 elif token in precedence:
                     while (operators and operators[-1] in precedence and
-                        precedence[token] <= precedence[operators[-1]]):
+                           precedence[token] <= precedence[operators[-1]]):
                         apply_operator(operators, values)
                     operators.append(token)
                 else:
-                    values.append(token)
+                    if token.startswith('"') and token.endswith('"'):
+                        phrase = token[1:-1]
+                        values.append(set(self.search_phrase(phrase)))
+                    else:
+                        values.append(set(self.trie.search(token.lower())))
                 i += 1
 
             while operators:
@@ -110,31 +134,47 @@ class PdfSearchEngine:
 
         tokens = parse_expression(query)
         result_pages = eval_expression(tokens)
-        print(result_pages)
         return result_pages
-    
 
-    def search_log(self, query):
+    def search_log(self, query, page=1, search_per_page=10):
         result_pages = self.evaluate_expression(query)
-        query_terms = [term for term in re.findall(r'\w+', query.lower()) if term not in {'and', 'or', 'not'}]
-
+        
+        query_phrases = [phrase[1:-1] for phrase in re.findall(r'\".*?\"', query.lower())]
+        query_terms = [term for term in re.findall(r'\b\w+\b', query.lower()) if term not in ['and', 'or', 'not'] 
+                    and all(term not in phrase.split() for phrase in query_phrases)]
+        
         results = {}
         for page_num in result_pages:
+            total_count = sum(self.pages_text[page_num].lower().count(term) for term in query_terms)
+            total_count += sum(self.pages_text[page_num].lower().count(phrase) for phrase in query_phrases)
             results[page_num] = {
-                'count': sum(self.pages_text[page_num].lower().count(term) for term in query_terms),
+                'count': total_count,
                 'rank': self.graph.get_node(page_num).rank
             }
-
+            
         sorted_results = sorted(results.items(), key=lambda item: (item[1]['count'], item[1]['rank']), reverse=True)
         search_results = []
 
-        for i, (page_num, info) in enumerate(sorted_results):
-            context = self.get_context(self.pages_text[page_num], query_terms)
-            search_results.append((i + 1, page_num + 1, context))
+        start = (page - 1) * search_per_page
+        end = start + search_per_page
+        paginated_results = sorted_results[start:end]
 
+        for i, (page_num, info) in enumerate(paginated_results):
+            context = self.get_context(self.pages_text[page_num], query_phrases +  query_terms)
+            search_results.append((start + i + 1, page_num + 1, context))
+        
         return search_results
-    
 
+    def search_phrase(self, phrase):
+        words = phrase.lower()
+        pages = []
+
+        for page_num, text in enumerate(self.pages_text):
+            if words in text.lower():
+                pages.append(page_num)
+        
+        return pages
+    
     def search_and(self, term1, term2):
         if isinstance(term1, set):
             pages1 = term1
@@ -173,18 +213,25 @@ class PdfSearchEngine:
                 pages2 = set(self.trie.search(term2))
             return pages1 - pages2
     
-    def search(self, query):
+    def search(self, query, page=1, search_per_page=10):
         if not self.is_indexed:
             raise ValueError("Index not built or loaded")
         
         if any(op in query for op in ['AND', 'OR', 'NOT']):
-            return self.search_log(query)
+            return self.search_log(query, page, search_per_page)
             
-        query_words = query.lower().split()
+        query_words = re.findall(r'\".*?\"|\w+', query.lower())
         results = {}
 
         for word in query_words:
-            pages = self.trie.search(word)
+
+            if word.startswith('"') and word.endswith('"'):
+                word = word[1:-1]
+                pages = self.search_phrase(word)
+
+            else:
+                pages = self.trie.search(word)
+                
             for page_num in pages:
                 if page_num not in results:
                     results[page_num] = {'count': 0, 'rank': self.graph.get_node(page_num).rank}
@@ -193,27 +240,38 @@ class PdfSearchEngine:
         sorted_results = sorted(results.items(), key=lambda item: (item[1]['count'], item[1]['rank']), reverse=True)
         search_results = []
 
-        for i, (page_num, info) in enumerate(sorted_results):
+        start = (page - 1) * search_per_page
+        end = start + search_per_page
+        paginated_results = sorted_results[start:end]
+
+
+        for i, (page_num, info) in enumerate(paginated_results):
             context = self.get_context(self.pages_text[page_num], query_words)
-            search_results.append((i + 1, page_num + 1, context))
+            search_results.append((start + i + 1, page_num + 1, context))
 
         return search_results
 
     def get_context(self, text, query_words, context_size=30):
         text_lower = text.lower()
-        positions = [m.start() for word in query_words for m in re.finditer(re.escape(word), text_lower)]
+        positions = []
+
+    
+        for word in query_words:
+            word_escaped = re.escape(word.strip('"'))
+            for match in re.finditer(word_escaped, text_lower):
+                positions.append((match.start(), match.end(), word.strip('"')))
+
         contexts = []
 
-        for pos in positions:
-            start = max(pos - context_size, 0)
-            end = min(pos + context_size + len(query_words[0]), len(text))
+        for start_pos, end_pos, word in sorted(positions):
+            start = max(start_pos - context_size, 0)
+            end = min(end_pos + context_size, len(text))
             snippet = text[start:end]
-            for word in query_words:
-                snippet = re.sub(re.escape(word), colored(word, 'red'), snippet, flags=re.IGNORECASE)
+            snippet = re.sub(re.escape(word), colored(word, 'red'), snippet, flags=re.IGNORECASE)
             contexts.append(snippet)
 
         return ' ... '.join(contexts)
-    
+
     
     def read_page(self, page_num):
         if 0 <= page_num < len(self.pages_text):

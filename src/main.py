@@ -20,25 +20,47 @@ def main():
 
     trie = engine.get_trie()
 
+    engine.save_popular_terms()
+
     while True:
         print("1. Search")
         print("2. Exit")
-        print("3. Write page")
         
         choice = input("Enter your choice: ")
         if choice == '1':
             query = input("Enter search query: ")
-            results = engine.search(query)
-            for result_num, page_num, context in results:
-                print("-" * 80)
-                print(f"Result {result_num}: Page {page_num}")
-                print(f"Context: {context}")
-                print("-" * 80)
+            page = 1
+            results_per_page = 10
+            
+            while True:
+
+                results = engine.search(query, page, results_per_page)
+
+                if not results:
+                    print("No results found.")
+                    break
+
+                print('\n' + '-' * 80)    
+                print("PAGE NUMBER: ", page)
+                for result_num, page_num, context in results:
+                    print("-" * 80)
+                    print(f"Result {result_num}: Page {page_num}")
+                    print(f"Context: {context}")
+                    print("-" * 80)
+                
+                next_page = input("Enter 'n' to see next page, 'p' for previous page, 'q' to quit: ")
+
+                if next_page.lower() == 'n':
+                    page += 1
+                
+                elif next_page.lower() == 'p' and page > 1:
+                    page -= 1
+
+                elif next_page.lower() == 'q':
+                    break
+
         elif choice == '2':
             break
-
-        elif choice == '3':
-            trie.print_trie()
 
 if __name__ == "__main__":
     main()
