@@ -59,10 +59,27 @@ def main():
                 elif next_page.lower() == 'q':
                     save_query = input("Do you want to save the search results? (y/n): ")
                     if save_query.lower() == 'y':
-                        for qu in query.split():
-                            if '*' in qu:
-                                autocomplete_word = engine.autocomplete(qu[:-1])[0]
-                                query = query.replace(qu, autocomplete_word)
+                        for qu in query.split():    
+                            try:    
+                                if '*' in qu:
+                                    if ")" in qu:
+                                        autocomplete_word = engine.autocomplete(qu[:-2])[0]
+                                        autocomplete_word += ')'
+                                    elif "(" in qu:
+                                        qu1 = qu[1:]
+                                        autocomplete_word = engine.autocomplete(qu1[:-1])[0]
+                                        autocomplete_word = '(' + autocomplete_word
+                                    elif qu.startswith('"'):
+                                        autocomplete_word = engine.autocomplete(qu[1:-1])[0]
+                                        autocomplete_word = '"' + autocomplete_word
+                                    elif qu.endswith('"'):
+                                        autocomplete_word = engine.autocomplete(qu[:-2])[0]
+                                        autocomplete_word += '"'
+                                    else:    
+                                        autocomplete_word = engine.autocomplete(qu[:-1])[0]
+                                    query = query.replace(qu, autocomplete_word)
+                            except:
+                                print("No autocomplete suggestions found.")
                         
                         query_terms = [term for term in re.findall(r'\b\w+\b', query.lower()) if term not in {'and', 'or', 'not'}]
                         output_filename = engine.save_and_highlight_search_results(results, query_terms)
