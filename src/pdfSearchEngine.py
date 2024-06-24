@@ -7,6 +7,9 @@ import pickle
 from gaph import Graph
 from fuzzywuzzy import process
 from collections import Counter
+import fitz
+import datetime
+
 
 class PdfSearchEngine:
     def __init__(self, path, index_file):
@@ -17,6 +20,7 @@ class PdfSearchEngine:
         self.pages_text = []
         self.is_indexed = False
         self.popular_terms = self.load_popular_terms()
+        self.output_folder = r"c:\Users\Nikola Bjelica\Desktop\pdf-search-engine\src\search_results"
     
     def get_trie(self):
         return self.trie
@@ -66,6 +70,37 @@ class PdfSearchEngine:
         return " ".join(suggestions)
         
 
+    def autocomplete(self, prefix):
+        suggestions = process.extractBests(prefix, self.popular_terms)
+        for suggestion in suggestions:
+            if suggestion[0].startswith(prefix):
+                return suggestion
+
+
+    def generate_unique_filename(self, base_name, extension="pdf"):
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{base_name}_{timestamp}.{extension}"
+        filepath = os.path.join(self.output_folder, filename)
+        return filepath
+
+
+    def save_and_highlight_search_results(self, search_results, query_terms):
+        output_filename = self.generate_unique_filename('search_results')
+        output_pdf = fitz.open()
+
+        for _, page_num, _ in search_results[:10]:
+            input_pdf = fitz.open(self.path)
+            output_pdf.insert_pdf(input_pdf, from_page=page_num - 1, to_page=page_num - 1)
+            new_page = output_pdf[-1]
+
+            for term in query_terms:
+                term_instances = new_page.search_for(term)
+                for inst in term_instances:
+                    new_page.add_highlight_annot(inst)
+
+        output_pdf.save(output_filename)
+        output_pdf.close()
+        return output_filename
 
 
     def index_page(self, text, page_num):
@@ -230,12 +265,44 @@ class PdfSearchEngine:
                 pages2 = set(self.trie.search(term2))
             return pages1 - pages2
     
+
     def search(self, query, page=1, search_per_page=10):
         if not self.is_indexed:
             raise ValueError("Index not built or loaded")
         
+        for qu in query.split():
+            try:    
+                if '*' in qu:
+                    if ")" in qu:
+                        print("QU: ", qu)
+                        autocomplete_word = self.autocomplete(qu[:-2])[0]
+                        autocomplete_word += ')'
+                    elif "(" in qu:
+                        print("QU: ", qu)
+                        qu1 = qu[1:]
+                        autocomplete_word = self.autocomplete(qu1[:-1])[0]
+                        autocomplete_word = '(' + autocomplete_word
+                    elif qu.startswith('"'):
+                        print("QU: ", qu)
+                        autocomplete_word = self.autocomplete(qu[1:-1])[0]
+                        autocomplete_word = '"' + autocomplete_word
+                    elif qu.endswith('"'):
+                        print("QU: ", qu)
+                        autocomplete_word = self.autocomplete(qu[:-2])[0]
+                        autocomplete_word += '"'
+                    else:    
+                        autocomplete_word = self.autocomplete(qu[:-1])[0]
+                    print('\n' + '-' * 80)
+                    print(f"Auto complete: {qu[:-1]} -> {autocomplete_word}")
+                    query = query.replace(qu, autocomplete_word)
+            except:
+                print("No autocomplete suggestions found.")
+        
+        print("QUERY: ", query)
+        
         if any(op in query for op in ['AND', 'OR', 'NOT']):
             return self.search_log(query, page, search_per_page)
+        
             
         query_words = re.findall(r'\".*?\"|\w+', query.lower())
         results = {}

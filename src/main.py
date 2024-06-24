@@ -1,6 +1,7 @@
 from pdfSearchEngine import PdfSearchEngine 
 import os
 import trie
+import re
 
 def main():
     index_file = '../trie.pkl'
@@ -56,7 +57,18 @@ def main():
                     page -= 1
 
                 elif next_page.lower() == 'q':
-                    break
+                    save_query = input("Do you want to save the search results? (y/n): ")
+                    if save_query.lower() == 'y':
+                        for qu in query.split():
+                            if '*' in qu:
+                                autocomplete_word = engine.autocomplete(qu[:-1])[0]
+                                query = query.replace(qu, autocomplete_word)
+                        
+                        query_terms = [term for term in re.findall(r'\b\w+\b', query.lower()) if term not in {'and', 'or', 'not'}]
+                        output_filename = engine.save_and_highlight_search_results(results, query_terms)
+                        break
+                    else:
+                        break
 
         elif choice == '2':
             break
